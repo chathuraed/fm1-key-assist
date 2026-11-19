@@ -7,7 +7,7 @@
 - **Replay demo (34 s scripted, runs the real firmware in your browser):** [open the replay](https://chathuraed.github.io/fm1-key-assist/emu/?package=https%3A%2F%2Fchathuraed.github.io%2Ffm1-key-assist%2Ffm1_key_assist.fwsc&name=KEY%20ASSIST&script=%2Ffm1-key-assist%2Femu%2Fdemo.script). Click the page once if your browser blocks sound.
 - **Play it yourself in the emulator:** [same page without the script](https://chathuraed.github.io/fm1-key-assist/emu/?package=https%3A%2F%2Fchathuraed.github.io%2Ffm1-key-assist%2Ffm1_key_assist.fwsc&name=KEY%20ASSIST)
 - **Firmware:** [`fm1_key_assist.fwsc`](https://chathuraed.github.io/fm1-key-assist/fm1_key_assist.fwsc) (SHA-256 `35ed1df824e113b960431c6615250828489ed78c3711a3f16817ba052c204648`; [size report](https://chathuraed.github.io/fm1-key-assist/size.json))
-- **Demo video (45 s):** `<TODO — record following proof/DEMO_STEPS.md>`
+- **Demo video:** not recorded yet. The live replay above plays exactly the sequence in [`proof/DEMO_STEPS.md`](proof/DEMO_STEPS.md), so you can watch (and hear) it in your browser.
 
 ## What it does
 
@@ -54,8 +54,8 @@ Everything below is reproducible; commands are in [How to reproduce](#how-to-rep
 The software above is finished and testable without hardware. What it still needs is a real FM-1 to confirm it on the device: flashing, key scanning, LCD refresh and audio on the real board.
 
 - **The ask:** one stock M-VAVE FM-1. Nothing else.
-- **What you get:** a recorded on-device test within `<N>` days of arrival (flash, KEY ASSIST demo, rollback to M-VAVE's original V15 to prove the unit is left stock-safe), credit in this README, and the results in `HARDWARE_TEST.md`.
-- **How to buy it (no cash from the recipient):** order directly to the recipient from the official M-VAVE store on AliExpress or Amazon, and check at checkout that the listing **ships to Sri Lanka**. Choose a tracked service. Prefer a listing that shows duties and taxes included; otherwise confirm Sri Lankan import duty and clearance against the current Sri Lanka Customs guidance before paying. `<TODO: add the live listing URLs and prices checked on the day. None are listed here because they change>`
+- **What you get:** a recorded on-device test once the unit arrives (flash, KEY ASSIST demo, rollback to M-VAVE's original V15 to prove the unit is left stock-safe), credit in this README, and the results published in `HARDWARE_TEST.md`.
+- **How to buy it (no cash from the recipient):** order directly to the recipient from the official M-VAVE store on AliExpress or Amazon, and check at checkout that the listing **ships to Sri Lanka**. Choose a tracked service. Prefer a listing that shows duties and taxes included; otherwise confirm Sri Lankan import duty and clearance against the current Sri Lanka Customs guidance before paying. Listing links and prices are deliberately not written here, because they change; check the official M-VAVE store page on the day you order.
 - **Privacy:** the delivery address is sent by private message only and is never put in this repository.
 
 ## How to reproduce
