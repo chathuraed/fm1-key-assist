@@ -1,0 +1,253 @@
+# SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception
+# KEY ASSIST build and proof.
+#   host-tests   unit tests + the real screen.c driven through the simulator + diff against the stock firmware
+#   web-preview  tools/Build-Web.ps1: the browser simulator compiled to WASM under -Wall -Wextra -Werror
+#   firmware     JieLi PI32v2 toolchain -> sdk/Build.ps1 -FirmwareOnly -> fm1_key_assist.fwsc, app-image size gate
+#   emu-site     fm1-emu's WASM core boots the real .fwsc and plays proof/demo.script; builds the Pages site
+#   deploy       publishes the emulator copy, the .fwsc and the replay link on GitHub Pages (main only)
+# The firmware toolchain is checked against sdk/manifest.json by Build.ps1 itself (22 file hashes).
+name: Build KEY ASSIST firmware
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: key-assist-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # m-vave/fm1_open commit this work started from: the stock reference for size and behaviour.
+  UPSTREAM_REF: 4c7496daac04a95ff10d1afdcc8f9ead2dbabc41
+  # joakimeriksson/fm1-emu (MIT) commit whose web page and WASM core are hosted beside the firmware.
+  FM1_EMU_REF: e058cf5fb78dbdc0814d3c5a3e9fb36a13bf2c97
+  # Largest application image sdk/Package.cs accepts (0xff000 - user - BTIF - VM - boot area - header - 447).
+  APP_IMAGE_LIMIT: '453921'
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the stock reference commit
+        run: git fetch --depth=1 https://github.com/m-vave/fm1_open "$UPSTREAM_REF"
+      - name: Unit tests (scale, chord, encoder and gesture logic)
+        run: |
+          "$CC" -std=c11 -Wall -Wextra -Werror -Iapp tests/key_assist_test.c app/key_assist.c -o "$RUNNER_TEMP/ka_test"
+          "$RUNNER_TEMP/ka_test"
+      - name: Real screen.c in the simulator (page, knobs, notes, audio, polyphony, no flash writes)
+        run: tests/run_sim_test.sh
+      - name: Demo script replayed against the firmware
+        run: tests/run_sim_test.sh demo proof/demo.script
+      - name: Zero regression with KEY ASSIST off (trace diff against stock)
+        run: |
+          STOCK_REF="$UPSTREAM_REF" tests/run_sim_test.sh stock > "$RUNNER_TEMP/stock.txt"
+          tests/run_sim_test.sh regress > "$RUNNER_TEMP/modified.txt"
+          diff -u "$RUNNER_TEMP/stock.txt" "$RUNNER_TEMP/modified.txt"
+          echo "stock and modified traces are identical ($(wc -l < "$RUNNER_TEMP/stock.txt") lines)"
+      - name: Reference LCD hashes for the emulator check
+        run: tests/run_sim_test.sh lcdhash | tee expected-lcd.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: expected-lcd
+          path: expected-lcd.json
+
+  web-preview:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: build/tools
+          key: wasi-sdk-27-windows
+      - name: Browser simulator (WASM, -Werror)
+        shell: powershell
+        run: ./tools/Build-Web.ps1 -LocalPreview
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-preview
+          path: build/preview/index.html
+
+  firmware:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out the stock reference
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git clone --no-checkout https://github.com/m-vave/fm1_open stock-src
+          if ($LASTEXITCODE) { throw 'clone failed' }
+          git -C stock-src checkout $env:UPSTREAM_REF
+          if ($LASTEXITCODE) { throw 'checkout failed' }
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/fm1tools
+          key: jieli-2.5.3-v1
+      - name: JieLi PI32v2 toolchain 2.5.3
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cache = Join-Path $env:RUNNER_TEMP 'fm1tools'
+          [IO.Directory]::CreateDirectory($cache) | Out-Null
+          function Get-Pinned($url, $name, $sha256) {
+            $file = Join-Path $cache $name
+            if (!(Test-Path -LiteralPath $file)) {
+              & curl.exe --fail --location --retry 2 --silent --show-error --output $file $url
+              if ($LASTEXITCODE) { throw "Download failed: $url" }
+            }
+            $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($sha256 -and $actual -ne $sha256) { throw "Checksum mismatch for $name ($actual)" }
+            Write-Host "$name SHA-256 $actual"
+            return $file
+          }
+          function Find-Toolchain($root) {
+            Get-ChildItem -LiteralPath $root -Recurse -Filter clang.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match 'pi32\\bin\\clang\.exe$' } | Select-Object -First 1
+          }
+          $toolchain = $null
+          $existing = Find-Toolchain $cache
+          if ($existing) { $toolchain = $existing }
+          else {
+            # The installer is an Inno Setup package: unpack it without running it (as the working
+            # cotrino/fm1-betis-mode CI does for 2.5.2); fall back to a silent install if that fails.
+            $extractor = Get-Pinned 'https://constexpr.org/innoextract/files/innoextract-1.9-windows.zip' 'innoextract.zip' '6989342c9b026a00a72a38f23b62a8e6a22cc5de69805cf47d68ac2fec993065'
+            Expand-Archive -LiteralPath $extractor -DestinationPath (Join-Path $cache 'innoextract') -Force
+            $installer = Get-Pinned 'https://jl-update.oss-cn-shenzhen.aliyuncs.com/2.5.3.exe' 'jieli-2.5.3.exe' $null
+            & (Join-Path $cache 'innoextract\innoextract.exe') --silent --output-dir (Join-Path $cache 'jieli') $installer
+            if (!$LASTEXITCODE) { $toolchain = Find-Toolchain (Join-Path $cache 'jieli') }
+            if (!$toolchain) {
+              Write-Host 'innoextract could not unpack the installer; running it silently instead'
+              Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\JL' -Wait
+              $toolchain = Find-Toolchain 'C:\JL'
+            }
+          }
+          if (!$toolchain) { throw 'JieLi toolchain 2.5.3 not found after install' }
+          $pi32 = Split-Path -Parent (Split-Path -Parent $toolchain.FullName)
+          Write-Host "FM1_PI32_TOOLCHAIN=$pi32"
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "FM1_PI32_TOOLCHAIN=$pi32`n")
+      - name: Build the stock firmware (size reference)
+        shell: powershell
+        working-directory: stock-src
+        run: |
+          ./sdk/Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN
+          if ($LASTEXITCODE) { throw 'stock build failed' }
+      - name: Build KEY ASSIST firmware
+        shell: powershell
+        run: |
+          ./sdk/Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN
+          if ($LASTEXITCODE) { throw 'build failed' }
+      - name: Size gate and package
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $limit = [int64]$env:APP_IMAGE_LIMIT
+          $ours = Get-Content build\dx7\firmware-report.json -Raw | ConvertFrom-Json
+          $stock = Get-Content stock-src\build\dx7\firmware-report.json -Raw | ConvertFrom-Json
+          if (-not $ours.passed) { throw 'firmware-report.json: passed is false' }
+          $package = 'build\dx7\generated\FM1_OFFICIAL_OPEN.fwsc'
+          if (!(Test-Path -LiteralPath $package)) { throw 'FM1_OFFICIAL_OPEN.fwsc was not produced' }
+          [IO.Directory]::CreateDirectory('dist') | Out-Null
+          Copy-Item -LiteralPath $package -Destination dist\fm1_key_assist.fwsc
+          $oursBytes = [int64]$ours.app_image_bytes
+          $stockBytes = [int64]$stock.app_image_bytes
+          $packageBytes = (Get-Item dist\fm1_key_assist.fwsc).Length
+          $sha = (Get-FileHash dist\fm1_key_assist.fwsc -Algorithm SHA256).Hash.ToLowerInvariant()
+          $result = [ordered]@{
+            app_image_bytes = $oursBytes; stock_app_image_bytes = $stockBytes; added_bytes = $oursBytes - $stockBytes
+            app_image_limit = $limit; headroom_bytes = $limit - $oursBytes
+            fwsc_file_bytes = $packageBytes; fwsc_sha256 = $sha; upstream_ref = $env:UPSTREAM_REF; passed = ($oursBytes -le $limit)
+          }
+          $result | ConvertTo-Json | Set-Content -Encoding ascii dist\size.json
+          "$sha  fm1_key_assist.fwsc" | Set-Content -Encoding ascii dist\SHA256SUMS.txt
+          Copy-Item build\dx7\firmware-report.json dist\firmware-report.json
+          $summary = @(
+            '### KEY ASSIST firmware size',
+            '| | bytes |', '|---|---|',
+            "| stock V14 app image | $stockBytes |", "| KEY ASSIST app image | $oursBytes |",
+            "| added | $($oursBytes - $stockBytes) |", "| limit (sdk/Package.cs) | $limit |",
+            "| headroom | $($limit - $oursBytes) |", "| fm1_key_assist.fwsc (whole package) | $packageBytes |"
+          )
+          [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, ($summary -join "`n") + "`n")
+          $result | Format-List | Out-String | Write-Host
+          if ($oursBytes -gt $limit) { throw "App image $oursBytes exceeds the $limit byte limit" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1_key_assist
+          path: dist/*
+
+  emu-site:
+    needs: [host-tests, firmware]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: joakimeriksson/fm1-emu
+          ref: ${{ env.FM1_EMU_REF }}
+          path: emu
+      - uses: actions/download-artifact@v4
+        with:
+          name: fm1_key_assist
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: expected-lcd
+          path: expected
+      - name: Build the emulator page (fm1-emu web/build.sh)
+        run: |
+          rustup target add wasm32-unknown-unknown
+          bash emu/web/build.sh "$GITHUB_WORKSPACE/site/emu"
+      - name: CPU-level check - boot the real .fwsc in the emulator and play proof/demo.script
+        run: |
+          node tests/emu_smoke.mjs site/emu dist/fm1_key_assist.fwsc proof/demo.script expected/expected-lcd.json | tee emu-check.txt
+          { echo '### fm1-emu check'; echo '```'; cat emu-check.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Assemble the Pages site and the replay link
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"; repo="${GITHUB_REPOSITORY#*/}"
+          cp dist/fm1_key_assist.fwsc dist/SHA256SUMS.txt dist/size.json site/
+          cp proof/demo.script site/emu/demo.script
+          package="https://${owner}.github.io/${repo}/fm1_key_assist.fwsc"
+          encoded=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$package")
+          replay="https://${owner}.github.io/${repo}/emu/?package=${encoded}&name=KEY%20ASSIST&script=%2F${repo}%2Femu%2Fdemo.script"
+          live="https://${owner}.github.io/${repo}/emu/?package=${encoded}&name=KEY%20ASSIST"
+          echo "$replay" > site/REPLAY_URL.txt
+          cat > site/index.html <<HTML
+          <!doctype html><meta charset="utf-8"><title>KEY ASSIST for FM-1</title>
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <style>body{font:16px/1.5 system-ui;margin:2rem auto;max-width:42rem;padding:0 1rem}code{word-break:break-all}</style>
+          <h1>KEY ASSIST for the M-VAVE FM-1</h1>
+          <p>Per-track scale lock and one-finger chords. Hold <b>SCL</b> for 600 ms. Emulator-verified, <b>not hardware-validated</b>.</p>
+          <ul>
+          <li><a href="${replay}">Watch the 34-second scripted demo (replay)</a></li>
+          <li><a href="${live}">Play it yourself in the emulator</a></li>
+          <li><a href="fm1_key_assist.fwsc">fm1_key_assist.fwsc</a> (<a href="SHA256SUMS.txt">SHA-256</a>, <a href="size.json">size report</a>)</li>
+          </ul>
+          <p>Replay URL: <code>${replay}</code></p>
+          HTML
+          { echo '### Replay URL (after deploy)'; echo; echo "$replay"; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    needs: emu-site
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
