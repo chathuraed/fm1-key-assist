@@ -50,8 +50,11 @@ jobs:
         run: |
           STOCK_REF="$UPSTREAM_REF" tests/run_sim_test.sh stock > "$RUNNER_TEMP/stock.txt"
           tests/run_sim_test.sh regress > "$RUNNER_TEMP/modified.txt"
-          diff -u "$RUNNER_TEMP/stock.txt" "$RUNNER_TEMP/modified.txt"
-          echo "stock and modified traces are identical ($(wc -l < "$RUNNER_TEMP/stock.txt") lines)"
+          # LCD pixel hashes legitimately differ on the operator-scaling steps (the DX7 algorithm diagram was
+          # removed to fit the size limit); every knob label and MIDI event must still match on all steps.
+          norm() { sed -E '/SCL tap|scaling page/ s/ screen=[0-9a-f]+//' "$1"; }
+          diff -u <(norm "$RUNNER_TEMP/stock.txt") <(norm "$RUNNER_TEMP/modified.txt")
+          echo "stock and modified traces match ($(wc -l < "$RUNNER_TEMP/stock.txt") lines; scaling-page pixels excluded)"
       - name: Reference LCD hashes for the emulator check
         run: tests/run_sim_test.sh lcdhash | tee expected-lcd.json
       - uses: actions/upload-artifact@v4

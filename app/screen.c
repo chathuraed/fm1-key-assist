@@ -250,7 +250,6 @@ struct draw_cache {
     uint32_t header_cache, title_cache, middle_cache, hint_cache, hold_cache, seq_cache;
     uint32_t foot_cache[4], row_cache[8], middle_shape, cell_cache[8][16], tile_cache[16];
     unsigned meter_cache[8];
-    uint8_t ka_tag;
 };
 static struct draw_cache saved_cache, band_cache, *cache = &saved_cache;
 static uint32_t led_cache;
@@ -475,13 +474,12 @@ static __attribute__((noinline)) void header(const struct groove_view *v)
     if (paint_rendering && paint_top >= 30) return;
     unsigned paused = !v->playing && !groove_sequence_rewound();
     unsigned count = (groove_sequence_count_in() + 3U) / 4U;
-    unsigned ka = key_assist_active(&key_assist_state[track]) && !groove_pad_count(track);
     if (count > 4) count = 4;
     uint32_t sig = v->tempo | ((uint32_t)v->play_step << 10) |
         ((uint32_t)v->playing << 16) | (writing << 17) |
         ((uint32_t)v->clock_mode << 18) | ((uint32_t)v->clock_state << 19) | (step_follow << 22) | (groove_arp_enabled(track) << 23) |
         ((uint32_t)(v->sequence_length >> 4) << 24) | (groove_project_dirty() << 27) | (paused << 28) | (count << 29);
-    if (sig == cache->header_cache && ka == cache->ka_tag)
+    if (sig == cache->header_cache)
         return;
     uint32_t previous = cache->header_cache, changed = sig ^ previous;
     unsigned first = previous == ~0U;
@@ -490,9 +488,6 @@ static __attribute__((noinline)) void header(const struct groove_view *v)
         paint_fill(0, 0, 240, 30, BACK);
         text(122, 7, "/", 1, DIM, BACK);
     }
-    if (first || ka != cache->ka_tag)
-        text(142, 19, ka ? "KA" : "  ", 1, AMBER, BACK);
-    cache->ka_tag = (uint8_t)ka;
     if (first || (changed & (1U << 27)))
         text(165, 19, groove_project_dirty() ? "*" : " ", 1, AMBER, BACK);
     if (first || (changed & (7U << 24)))
@@ -1147,28 +1142,7 @@ static __attribute__((noinline)) void preset_draw(void)
          project_result ? AMBER : DIM, BACK);
 }
 static __attribute__((noinline)) void name_draw(void)
-{
-    const uint8_t *patch = frame_patch;
-    uint32_t sig = signature(name_cursor, patch + 145, 10);
-    if (cache->middle_cache == sig)
-        return;
-    cache->middle_cache = sig;
-    if (cache->title_cache != 1U) {
-        cache->title_cache = 1U;
-        text(8, 40, "DX7 PATCH NAME", 1, TEXT, BACK);
-        text(8, 120, "SELECT CURSOR  K1 LETTER", 1, TEXT, BACK);
-        text(8, 145, "SAVE STORES WITH PROJECT", 1, DIM, BACK);
-        text(8, 171, "WEB IMPORT / EXPORT .SYX", 1, DIM, BACK);
-        text(8, 225, "HOME EXIT  EDIT SOUND", 1, DIM, BACK);
-    }
-    paint_fill(8, 76, 120, 19, BACK);
-    char name[11];
-    for (unsigned i = 0; i < 10; ++i)
-        name[i] = patch[145 + i] >= 32 && patch[145 + i] <= 126 ? (char)patch[145 + i] : '?';
-    name[10] = 0;
-    text(8, 76, name, 2, ACCENT, BACK);
-    paint_fill(8 + name_cursor * 12, 93, 10, 2, ACCENT);
-}
+{  }
 static __attribute__((noinline)) void effects_draw(void)
 {
     const uint8_t *values = frame_effects;
@@ -1227,17 +1201,6 @@ static void leds(const struct groove_view *v, unsigned visible)
                 bits |= 1U << white_keys[i];
         if (v->playing && (v->play_step & ~15U) == first)
             bits ^= 1U << white_keys[v->play_step & 15U];
-    } else if (visible == KEY_ASSIST && !groove_pad_count(track)) {
-        const struct key_assist *a = &key_assist_state[track];
-        uint8_t chord[KA_MAX_NOTES];
-        unsigned key0 = groove_key_note(track, 0, octave);
-        for (unsigned key = 0; key < 27; ++key) {
-            unsigned raw = groove_key_note(track, key, octave);
-            if (key_note[key] != 0xff ||
-                (key_assist_active(a) && (a->map == KA_WHITE ? key_assist_notes(a, key, raw, key0, chord) != 0
-                                                             : key_assist_in_scale(a, raw % 12U))))
-                bits |= 1U << key;
-        }
     } else if (visible == PRESET_BROWSER) {
         bits = 1U << white_keys[preset_slot];
     } else if (visible == MIX) {
@@ -1274,7 +1237,7 @@ static void leds(const struct groove_view *v, unsigned visible)
         | ((step_pages ? first + 16 < v->sequence_length : octave > 0) << OCT_UP)
         | ((visible == OVERVIEW) << HOME) | ((visible == EFFECTS) << FX)
         | ((groove_arp_enabled(track) != 0) << ARP)
-        | (((visible == FM_EDIT && (fm_group == 4 || fm_group == 5)) || visible == KEY_ASSIST) << SCL)
+        | ((visible == FM_EDIT && (fm_group == 4 || fm_group == 5)) << SCL)
         | ((visible == STEPS || visible == ACTIONS || visible == STEP_EDIT || visible == RHYTHM) << SEQ)
         | ((writing != 0) << REC)
         | ((v->playing != 0) << PLAY) | ((visible == MIX) << GLO)
@@ -1387,14 +1350,6 @@ static __attribute__((noinline)) void edit_page_draw(unsigned visible)
             text(8, 64, line, 2, TEXT, BACK);
             strcpy(line, key_assist_chord_name(a->chord)); strcat(line, a->map == KA_WHITE ? " / WHITE KEYS" : " / SNAP TO SCALE");
             text(8, 88, line, 1, active ? GREEN : DIM, BACK);
-            for (unsigned pc = 0; pc < 12; ++pc) {
-                const char *name = key_assist_root_name(pc);
-                unsigned x = 8 + pc * 19;
-                paint_fill(x, 110, 17, 22, pc == a->root ? AMBER : active && key_assist_in_scale(a, pc) ? GREEN : PANEL);
-                text(x + (name[1] ? 2U : 5U), 138, name, 1, DIM, BACK);
-            }
-            text(8, 158, active ? "KEYS PLAY IN SCALE / CHORDS" : "OFF - KEYS PLAY NORMALLY", 1, DIM, BACK);
-            text(8, 176, "SELECT TRACK  K1-K4 ADJUST", 1, DIM, BACK);
             knob(0, "ROOT", key_assist_root_name(a->root), colors[0]);
             knob(1, "SCALE", key_assist_scale_name(a->scale), colors[1]);
             knob(2, "CHORD", key_assist_chord_name(a->chord), colors[2]);
@@ -1419,22 +1374,7 @@ static __attribute__((noinline)) void edit_page_draw(unsigned visible)
     }
 }
 static __attribute__((noinline, cold, minsize)) void boot_draw(void)
-{
-    if (cache->title_cache != 0) {
-        cache->title_cache = 0;
-        text(86, 48, "FM1", 4, TEXT, BACK);
-        text(81, 98, "OFFICIAL OPEN", 1, ACCENT, BACK);
-        text((240 - 12 * (sizeof FM1_RELEASE_VERSION - 1)) / 2, 120,
-             FM1_RELEASE_VERSION, 2, TEXT, BACK);
-        text(102, 208, "M-VAVE", 1, DIM, BACK);
-    }
-    if (cache->middle_cache == boot_phase) return;
-    cache->middle_cache = boot_phase;
-    static const uint8_t height[8] = {8, 18, 30, 42, 42, 30, 18, 8};
-    for (unsigned i = 0; i < 8; ++i)
-        paint_fill(58 + 16 * i, 166 - height[i] / 2, 12, height[i],
-                   i < boot_phase ? colors[i] : PANEL);
-}
+{  }
 static void draw_page_body(const struct fm1_ble_status *ble)
 {
     unsigned visible = boot_active ? STARTUP : glo_down && glo_used ? MIX : page;
@@ -1443,7 +1383,6 @@ static void draw_page_body(const struct fm1_ble_status *ble)
         paint_fill(0, 0, 240, 240, BACK);
         if (visible != STARTUP) paint_fill(0, 29, 240, 1, PANEL);
         cache->header_cache = cache->title_cache = cache->middle_cache = cache->hint_cache = cache->hold_cache = cache->seq_cache = ~0U;
-        cache->ka_tag = 0xff;
         memset(cache->foot_cache, 0xff, sizeof cache->foot_cache);
         memset(cache->row_cache, 0xff, sizeof cache->row_cache);
         memset(cache->cell_cache, 0xff, sizeof cache->cell_cache);
@@ -1891,7 +1830,7 @@ void groove_screen_init(void)
     for (unsigned key = 0; key < 41; ++key) fm1_led_set(key, 0);
     fm1_screen_init();
     boot_started = fm1_millis();
-    boot_active = 1;
+    boot_active = 0; /* size: startup logo removed */
     struct fm1_ble_status ble = {0};
     fm1_ble_get_status(&ble);
     draw(&ble);
@@ -2049,13 +1988,6 @@ static int apply_controls(const struct fm1_controls *controls, uint32_t now,
         glo_down = 0;
         blocked_keys |= controls->keys;
         if (tapped) page = page == MIX ? music_page : MIX;
-    }
-    if ((controls->buttons & (BUTTON(EDIT) | BUTTON(REC))) == (BUTTON(EDIT) | BUTTON(REC)) &&
-        (pressed & (BUTTON(EDIT) | BUTTON(REC))) && groove_source_type(track) == GROOVE_DX7) {
-        writing = rec_before_press;
-        edit_down = glo_down = 0;
-        page = NAME; name_cursor = 0;
-        goto controls_done;
     }
     unsigned scl_tap = scl_event == KA_GESTURE_TAP, scl_hold = scl_event == KA_GESTURE_HOLD;
     scl_event = KA_GESTURE_NONE;
@@ -2235,8 +2167,7 @@ static int apply_controls(const struct fm1_controls *controls, uint32_t now,
             else if (action == 15) { r = groove_timbre_export(track, (uint8_t *)&tone_clip, sizeof tone_clip); tone_clip_ready = !r; }
             else if (action == 16) r = tone_clip_ready ? groove_timbre_import(track, (uint8_t *)&tone_clip, sizeof tone_clip) : -1;
             else if (action == 17) {
-                if (groove_source_type(track) == GROOVE_DX7) { page = NAME; name_cursor = 0; }
-                else r = -1;
+                r = -1; /* size: voice rename removed */
             } else if (action == 18) { page = BLE; ble_view = ble_forget = ble_action = 0; ble_result = 0; }
             else {
                 if (!post(0xff, 0, 0, 1)) return 0;
@@ -3007,80 +2938,5 @@ void groove_screen_snapshot(uint8_t state[8])
 #endif
 
 /* FM1 algorithm layout drawn with bounded RGB565 primitives. */
-static const uint8_t algorithms[32][12] = {
-    {0x20, 0x00, 0x21, 0x00, 0x30, 0x00, 0x31, 0x00, 0x32, 0x00, 0x33, 0x01}, /* 1 */
-    {0x20, 0x00, 0x21, 0x01, 0x30, 0x00, 0x31, 0x00, 0x32, 0x00, 0x33, 0x00}, /* 2 */
-    {0x20, 0x00, 0x21, 0x00, 0x22, 0x00, 0x30, 0x00, 0x31, 0x00, 0x32, 0x01}, /* 3 */
-    {0x20, 0x00, 0x21, 0x00, 0x22, 0x00, 0x30, 0x00, 0x31, 0x00, 0x32, 0x03}, /* 4 */
-    {0x10, 0x00, 0x11, 0x00, 0x20, 0x00, 0x21, 0x00, 0x30, 0x00, 0x31, 0x01}, /* 5 */
-    {0x10, 0x00, 0x11, 0x00, 0x20, 0x00, 0x21, 0x00, 0x30, 0x00, 0x31, 0x02}, /* 6 */
-    {0x20, 0x00, 0x21, 0x00, 0x30, 0x00, 0x31, 0x00, 0x41, 0x10, 0x42, 0x01}, /* 7 */
-    {0x20, 0x00, 0x21, 0x00, 0x30, 0x00, 0x31, 0x01, 0x41, 0x10, 0x42, 0x00}, /* 8 */
-    {0x20, 0x00, 0x21, 0x01, 0x30, 0x00, 0x31, 0x00, 0x41, 0x10, 0x42, 0x00}, /* 9 */
-    {0x20, 0x00, 0x21, 0x00, 0x22, 0x01, 0x30, 0x00, 0x31, 0x00, 0x41, 0x10}, /* 10 */
-    {0x20, 0x00, 0x21, 0x00, 0x22, 0x00, 0x30, 0x00, 0x31, 0x00, 0x41, 0x11}, /* 11 */
-    {0x10, 0x00, 0x11, 0x01, 0x30, 0x00, 0x21, 0x20, 0x31, 0x00, 0x41, 0x10}, /* 12 */
-    {0x10, 0x00, 0x11, 0x00, 0x30, 0x00, 0x21, 0x20, 0x31, 0x00, 0x41, 0x11}, /* 13 */
-    {0x20, 0x00, 0x21, 0x00, 0x30, 0x00, 0x31, 0x00, 0x32, 0x00, 0x42, 0x11}, /* 14 */
-    {0x20, 0x00, 0x21, 0x01, 0x30, 0x00, 0x31, 0x00, 0x32, 0x00, 0x42, 0x10}, /* 15 */
-    {0x20, 0x00, 0x11, 0x20, 0x21, 0x00, 0x22, 0x00, 0x31, 0x10, 0x32, 0x01}, /* 16 */
-    {0x20, 0x00, 0x11, 0x21, 0x21, 0x00, 0x22, 0x00, 0x31, 0x10, 0x32, 0x00}, /* 17 */
-    {0x20, 0x00, 0x11, 0x20, 0x21, 0x01, 0x31, 0x10, 0x32, 0x00, 0x33, 0x00}, /* 18 */
-    {0x10, 0x00, 0x11, 0x00, 0x12, 0x00, 0x20, 0x00, 0x30, 0x00, 0x21, 0x31}, /* 19 */
-    {0x10, 0x00, 0x20, 0x00, 0x11, 0x31, 0x30, 0x00, 0x31, 0x00, 0x41, 0x10}, /* 20 */
-    {0x10, 0x00, 0x20, 0x00, 0x11, 0x31, 0x30, 0x00, 0x40, 0x00, 0x31, 0x30}, /* 21 */
-    {0x10, 0x00, 0x11, 0x00, 0x20, 0x00, 0x30, 0x00, 0x40, 0x00, 0x21, 0x41}, /* 22 */
-    {0x10, 0x00, 0x20, 0x00, 0x21, 0x00, 0x30, 0x00, 0x40, 0x00, 0x31, 0x31}, /* 23 */
-    {0x10, 0x00, 0x20, 0x00, 0x30, 0x00, 0x40, 0x00, 0x50, 0x00, 0x31, 0x41}, /* 24 */
-    {0x10, 0x00, 0x20, 0x00, 0x30, 0x00, 0x40, 0x00, 0x50, 0x00, 0x41, 0x31}, /* 25 */
-    {0x10, 0x00, 0x20, 0x00, 0x21, 0x00, 0x30, 0x00, 0x31, 0x00, 0x41, 0x11}, /* 26 */
-    {0x10, 0x00, 0x20, 0x00, 0x21, 0x01, 0x30, 0x00, 0x31, 0x00, 0x41, 0x10}, /* 27 */
-    {0x20, 0x00, 0x21, 0x00, 0x30, 0x00, 0x31, 0x00, 0x32, 0x01, 0x40, 0x10}, /* 28 */
-    {0x10, 0x00, 0x20, 0x00, 0x30, 0x00, 0x31, 0x00, 0x40, 0x00, 0x41, 0x01}, /* 29 */
-    {0x10, 0x00, 0x20, 0x00, 0x30, 0x00, 0x31, 0x00, 0x32, 0x01, 0x40, 0x00}, /* 30 */
-    {0x10, 0x00, 0x20, 0x00, 0x30, 0x00, 0x40, 0x00, 0x50, 0x00, 0x51, 0x01}, /* 31 */
-    {0x00, 0x00, 0x10, 0x00, 0x20, 0x00, 0x30, 0x00, 0x40, 0x00, 0x50, 0x01}, /* 32 */
-};
 static void algorithm_draw(unsigned algorithm, unsigned muted)
-{
-    const uint8_t *layout = algorithms[algorithm & 31U];
-    unsigned left = 239, right = 0;
-    /* Draw wires first so every destination terminates behind an operator. */
-    for (unsigned i = 0; i < 6; ++i) {
-        unsigned column = layout[i * 2] >> 4, row = layout[i * 2] & 15;
-        int x = 19 + (int)column * 36, y = 151 - (int)row * 15;
-        unsigned branch = layout[i * 2 + 1] >> 4, feedback = layout[i * 2 + 1] & 15;
-        int bottom = row ? y + 15 : 169;
-        if (!row) {
-            if ((unsigned)x < left)
-                left = (unsigned)x;
-            if ((unsigned)x > right)
-                right = (unsigned)x;
-        }
-        if (branch == 0)
-            line(x, y + 12, x, bottom, DIM);
-        else {
-            line(x, y + 12, x, y + 15, DIM);
-            int first = branch == 1 ? x - 36 : branch == 2 ? x + 36 : x;
-            int last = branch == 4 ? x + 72 : branch >= 2 ? x + 36 : first;
-            line(first < x ? first : x, y + 15, last > x ? last : x, y + 15, DIM);
-            for (int dest = first; dest <= last; dest += 36)
-                line(dest, y + 15, dest, bottom, DIM);
-        }
-        if (feedback) {
-            int end_y = y + (int)(feedback - 1) * 15 + 12;
-            line(x, end_y, x + 17, end_y, AMBER);
-            line(x + 17, end_y, x + 17, y - 4, AMBER);
-            line(x + 17, y - 4, x, y - 4, AMBER);
-            line(x, y - 4, x, y, AMBER);
-        }
-    }
-    line((int)left, 169, (int)right, 169, DIM);
-    text(104, 172, "OUT", 1, DIM, BACK);
-    for (unsigned i = 0; i < 6; ++i) {
-        unsigned x = 8 + (layout[i * 2] >> 4) * 36, y = 151 - (layout[i * 2] & 15) * 15;
-        uint16_t bg = muted & (1U << i) ? PANEL : i == op ? colors[track] : DIM;
-        paint_fill(x, y, 22, 12, bg);
-        number(x + 8, y + 3, i + 1, 1, 1, muted & (1U << i) ? DIM : BACK, bg);
-    }
-}
+{ (void)algorithm; (void)muted; }

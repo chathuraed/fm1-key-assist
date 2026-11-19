@@ -9,11 +9,11 @@ Run these in order in Chrome with sound on. The replay plays `proof/demo.script`
 
 | # | Step | Time | What you must see and hear | Acceptance criterion |
 |---|------|------|----------------------------|----------------------|
-| 1 | **Clean boot, assist off** | 0–4.6 s | The 240×240 LCD boots to the 8-track music page (`PIANO 1`, `303 SAW`, … `808 KIT`). At 4.0 s one key plays a single D with an FM piano tone. No `KA` tag in the header. | 2 Zero-regression stock boot |
+| 1 | **Clean boot, assist off** | 0–4.6 s | (There is no startup logo in this build.) The 240×240 LCD boots to the 8-track music page (`PIANO 1`, `303 SAW`, … `808 KIT`). At 4.0 s one key plays a single D with an FM piano tone. | 2 Zero-regression stock boot |
 | 2 | **Short SCL tap is the stock action** | 5.5 s, 7.0 s, 8.0 s | Tap 1 opens the stock DX7 operator-scaling page (knob labels `L DEPTH / R DEPTH / BREAKPT`). Tap 2 shows `L CURVE / R CURVE / RATE SC`. HOME returns to the music page. KEY ASSIST does **not** open. | 3 (tap) |
-| 3 | **600 ms hold opens KEY ASSIST** | 9.0 s → 9.6 s | A cyan hold bar fills along the top edge for 600 ms, then the `KEY ASSIST` page appears with `T1`, `C OFF`, `SINGLE / SNAP TO SCALE`, a 12-cell pitch strip, and knobs `ROOT / SCALE / CHORD / MAP`. Releasing SCL at 9.9 s leaves the page open. | 3 (hold) |
-| 4 | **All four knobs update the LCD** | 10.8–15.1 s | K1: `C#` (10.8 s) then `D` (11.5 s). K2: `MAJOR` → `MINOR` → `DORIAN` (12.3, 12.9, 13.5 s). K3: `TRIAD` (14.3 s). K4: `WHITE` (15.1 s). The strip turns green on the D Dorian notes (C D E F G A B) with D in amber, and the subtitle reads `TRIAD / WHITE KEYS`. | 3 (knobs), `#` root |
-| 5 | **One key = one chord, then back to stock** | 16.0–33.8 s | Single keys sound Dm (16.0 s), F (17.3 s), G (18.6 s), Am (19.9 s) triads. After SCL tap at 21.5 s the music page shows an amber `KA` tag and a key still plays Dm. After K3 → `POWER`, the key at 27.0 s sounds D–A–D. Knobs are reset at 28.8–31.2 s, the page is left at 32.0 s, and the key at 33.0 s sounds a plain D again; `KA` is gone. | 4 Audio and polyphony |
+| 3 | **600 ms hold opens KEY ASSIST** | 9.0 s → 9.6 s | A cyan hold bar fills along the top edge for 600 ms, then the `KEY ASSIST` page appears with `T1`, `C OFF`, `SINGLE / SNAP TO SCALE`, and knobs `ROOT / SCALE / CHORD / MAP`. Releasing SCL at 9.9 s leaves the page open. | 3 (hold) |
+| 4 | **All four knobs update the LCD** | 10.8–15.1 s | K1: `C#` (10.8 s) then `D` (11.5 s). K2: `MAJOR` → `MINOR` → `DORIAN` (12.3, 12.9, 13.5 s). K3: `TRIAD` (14.3 s). K4: `WHITE` (15.1 s). The title reads `D DORIAN` and the subtitle `TRIAD / WHITE KEYS`. | 3 (knobs), `#` root |
+| 5 | **One key = one chord, then back to stock** | 16.0–33.8 s | Single keys sound Dm (16.0 s), F (17.3 s), G (18.6 s), Am (19.9 s) triads. After SCL tap at 21.5 s the music page is back and a key still plays Dm (assist stays on). After K3 → `POWER`, the key at 27.0 s sounds D–A–D. Knobs are reset at 28.8–31.2 s, the page is left at 32.0 s, and the key at 33.0 s sounds a plain D again; assist is off. | 4 Audio and polyphony |
 
 ## Expected notes (checked automatically)
 

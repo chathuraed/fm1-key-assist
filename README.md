@@ -2,7 +2,7 @@
 
 **Scale lock and one-finger chords for the FM-1's 27 keys, built into the stock FM1 Open groovebox.** Hold **SCL** for 600 ms, pick a root, scale, chord type and key mapping on the 240×240 screen, and every key plays in key. No menu-diving, no separate firmware.
 
-> **Status: emulator-verified, not hardware-validated.** The firmware logic, screen, controls and audio path are tested in a host simulator built from the real sources. The `.fwsc` package, its size and its run on an emulated FM-1 CPU are produced and checked by CI. See [Proof](#proof). It has not been run on a physical FM-1; that is what the hardware request below is for.
+> **Status: emulator-verified, not hardware-validated.** The firmware logic, screen, controls and audio path are tested in a host simulator built from the real sources. The `.fwsc` was built with the official toolchain, fits the size limit, and boots and plays in an emulated FM-1 CPU. See [Proof](#proof). It has not been run on a physical FM-1; that is what the hardware request below is for.
 
 - **Replay demo (34 s scripted):** `<REPLAY_URL — set by CI after the first deploy; see REPLAY_URL.txt on the Pages site>`
 - **Play it yourself in the emulator:** same page, without `&script=`
@@ -22,11 +22,15 @@
 - **Scales:** OFF, MAJOR, MINOR, DORIAN, MIXOLYDIAN, PENT MAJ, PENT MIN, BLUES, HARM MIN.
 - **Chords:** SINGLE, TRIAD (1-3-5 of the scale), 7TH (1-3-5-7), POWER (root, fifth, octave). With scale OFF, chords use MAJOR.
 - **Mapping:** SNAP sends an off-scale key to the nearest lower scale tone. WHITE makes the white keys consecutive scale degrees from the root and silences the black keys.
-- **LCD:** a 12-cell pitch strip (scale tones green, root amber); a `KA` tag in the header when assist is on for the current track. LEDs light the playable keys.
+- **LCD:** the current root, scale, chord and mapping, and the four knob labels.
 - **Drum tracks** (808, sampler) are never changed. The page says `DRUM TRACK - ASSIST OFF`.
 - **Recording:** assisted notes go through the normal MIDI path, so step-record captures the chord.
 
-Two things differ from stock, both on purpose: **SCL now acts on release** (a tap opens the stock operator-scaling page when you let go, so it can be told apart from a hold), and KEY ASSIST settings live in RAM only and reset at power-off. Nothing is written to flash.
+Three things differ from stock, all on purpose:
+
+1. **SCL now acts on release.** A tap opens the stock operator-scaling page when you let go, so it can be told apart from a hold.
+2. **KEY ASSIST settings live in RAM only** and reset at power-off. Nothing is written to flash.
+3. **Three stock extras were removed to make room.** M-VAVE's firmware has only 345 bytes of headroom, so a feature this size can only fit by giving something up: the **startup logo**, the **DX7 algorithm diagram** on the edit page (the algorithm number is still a knob), and the **voice-rename screen** (EDIT+REC, and the Actions-menu item). Everything else is unchanged. The size numbers below come from the real toolchain.
 
 ## Proof
 
@@ -37,13 +41,13 @@ Everything below is reproducible; commands are in [How to reproduce](#how-to-rep
 | Scale, chord, encoder and gesture logic is correct | 115,038 unit checks (`tests/key_assist_test.c`) | ✅ passes locally |
 | The real `screen.c` behaves: tap vs hold, page, four knobs, notes, drum bypass, no hanging notes, no flash writes | 87 checks driving the real firmware code through the simulator | ✅ passes locally |
 | One key sounds the right chord | The audio rendered for one assisted key is **bit-identical** to pressing the same 3–4 stock keys (max difference 0) | ✅ passes locally |
-| KEY ASSIST off = stock | The same 33-step session (LCD pixels, knob labels, MIDI) replayed on the stock `screen.c` and the modified one gives identical output | ✅ identical locally |
+| KEY ASSIST off = stock | The same 33-step session replayed on the stock `screen.c` and the modified one: MIDI and knob labels identical on all 33 steps; LCD pixels identical except the four steps that show the operator-scaling page, where the removed algorithm diagram was | ✅ as described |
 | The demo script does what it says | 34 s script replayed against the firmware; all 20 notes match | ✅ passes locally |
 | Browser simulator builds to WASM | `web-preview` CI job | ⏳ needs the Windows CI run |
-| Firmware links; app image ≤ 453,921 B | `firmware` CI job (JieLi toolchain, `sdk/Build.ps1`); size gate in the workflow | ⏳ needs the Windows CI run |
-| The `.fwsc` boots in an emulated FM-1 CPU and the chords are audible | `emu-site` CI job (`tests/emu_smoke.mjs`, `fm1-emu`) | ⏳ needs the CI run |
+| Firmware links with the official toolchain; app image ≤ 453,921 B | Built locally with JieLi 2.5.3 (all 22 files match `sdk/manifest.json`) run under Wine. **App image 453,896 B** (25 B under the limit; stock is 453,576 B). `Package.cs` reports `fits=True` | ✅ built locally; the Windows CI run is still ⏳ |
+| The `.fwsc` boots in an emulated FM-1 CPU and the chords are audible | `fm1-emu`'s WASM core ran the packaged `.fwsc` through `proof/demo.script` (34.5 s): audio produced, all six chord segments audible (RMS about 0.10 against 0.00 idle), and the LCD at 10.5 s matches the host render of the KEY ASSIST page pixel for pixel | ✅ passes locally |
 
-**About the size limit.** The 453,921-byte ceiling in `sdk/Package.cs` applies to the *application image inside the package*. The finished `.fwsc` is larger by design (M-VAVE's own V15 package is 699,956 bytes), so CI gates the app image and reports both numbers. The added code is small, but the real figure comes from the CI size report: `size.json` beside the firmware.
+**About the size limit.** The 453,921-byte ceiling in `sdk/Package.cs` applies to the *application image inside the package*, which is 453,896 B here. The finished `.fwsc` is 492,084 B; that is larger than the limit by design (M-VAVE's own V15 package is 699,956 B), so the workflow gates the app image and reports both numbers. The margin is only 25 B, so any later change to `screen.c` must be re-measured.
 
 ## For donors: how a physical unit gets tested
 
