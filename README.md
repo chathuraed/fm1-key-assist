@@ -4,9 +4,9 @@
 
 > **Status: emulator-verified, not hardware-validated.** The firmware logic, screen, controls and audio path are tested in a host simulator built from the real sources. The `.fwsc` was built with the official toolchain, fits the size limit, and boots and plays in an emulated FM-1 CPU. See [Proof](#proof). It has not been run on a physical FM-1; that is what the hardware request below is for.
 
-- **Replay demo (34 s scripted):** `<REPLAY_URL — set by CI after the first deploy; see REPLAY_URL.txt on the Pages site>`
-- **Play it yourself in the emulator:** same page, without `&script=`
-- **Firmware:** `fm1_key_assist.fwsc` (SHA-256 and size report beside it)
+- **Replay demo (34 s scripted, runs the real firmware in your browser):** [open the replay](https://chathuraed.github.io/fm1-key-assist/emu/?package=https%3A%2F%2Fchathuraed.github.io%2Ffm1-key-assist%2Ffm1_key_assist.fwsc&name=KEY%20ASSIST&script=%2Ffm1-key-assist%2Femu%2Fdemo.script). Click the page once if your browser blocks sound.
+- **Play it yourself in the emulator:** [same page without the script](https://chathuraed.github.io/fm1-key-assist/emu/?package=https%3A%2F%2Fchathuraed.github.io%2Ffm1-key-assist%2Ffm1_key_assist.fwsc&name=KEY%20ASSIST)
+- **Firmware:** [`fm1_key_assist.fwsc`](https://chathuraed.github.io/fm1-key-assist/fm1_key_assist.fwsc) (SHA-256 `35ed1df824e113b960431c6615250828489ed78c3711a3f16817ba052c204648`; [size report](https://chathuraed.github.io/fm1-key-assist/size.json))
 - **Demo video (45 s):** `<TODO — record following proof/DEMO_STEPS.md>`
 
 ## What it does
