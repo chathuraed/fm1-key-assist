@@ -1,0 +1,16 @@
+{
+  "app_image_bytes": 453896,
+  "stock_app_image_bytes": 453576,
+  "app_image_limit": 453921,
+  "headroom_bytes": 25,
+  "fwsc_file_bytes": 492084,
+  "fwsc_sha256": "35ed1df824e113b960431c6615250828489ed78c3711a3f16817ba052c204648",
+  "toolchain": "JieLi 2.5.3 (22 files match sdk/manifest.json), run under Wine",
+  "package_fits": true,
+  "hardware_validated": false,
+  "removed_from_stock": [
+    "startup logo",
+    "DX7 algorithm diagram",
+    "voice-rename screen"
+  ]
+}
